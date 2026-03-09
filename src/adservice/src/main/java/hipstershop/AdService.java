@@ -30,6 +30,8 @@ import io.grpc.services.*;
 import io.grpc.stub.StreamObserver;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.time.ZonedDateTime;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Random;
@@ -41,6 +43,13 @@ import org.apache.logging.log4j.Logger;
 public final class AdService {
 
   private static final Logger logger = LogManager.getLogger(AdService.class);
+
+  private static final ImmutableMap<String, String> DISCOUNT_CODES =
+      ImmutableMap.of(
+          "clothing", "STYLE20",
+          "decor", "HOME25",
+          "kitchen", "CHEF10",
+          "accessories", "ACCESS5");
 
   @SuppressWarnings("FieldCanBeLocal")
   private static int MAX_ADS_TO_SERVE = 2;
@@ -93,22 +102,29 @@ public final class AdService {
     @Override
     public void getAds(AdRequest req, StreamObserver<AdResponse> responseObserver) {
       AdService service = AdService.getInstance();
+      List<Ad> enrichedAds = new ArrayList<>();
       try {
-        List<Ad> allAds = new ArrayList<>();
         logger.info("received ad request (context_words=" + req.getContextKeysList() + ")");
         if (req.getContextKeysCount() > 0) {
           for (int i = 0; i < req.getContextKeysCount(); i++) {
-            Collection<Ad> ads = service.getAdsByCategory(req.getContextKeys(i));
-            allAds.addAll(ads);
+            String category = req.getContextKeys(i);
+            Collection<Ad> ads = service.getAdsByCategory(category);
+            for (Ad ad : ads) {
+              enrichedAds.add(service.enrichWithFlashSale(ad, category));
+            }
           }
-        } else {
-          allAds = service.getRandomAds();
         }
-        if (allAds.isEmpty()) {
+
+        if (enrichedAds.isEmpty()) {
           // Serve random ads.
-          allAds = service.getRandomAds();
+          for (Ad ad : service.getRandomAds()) {
+            enrichedAds.add(service.enrichWithFlashSale(ad, "general"));
+          }
         }
-        AdResponse reply = AdResponse.newBuilder().addAllAds(allAds).build();
+
+        // Limit the number of ads returned to the client
+        List<Ad> finalAds = enrichedAds.subList(0, Math.min(enrichedAds.size(), MAX_ADS_TO_SERVE));
+        AdResponse reply = AdResponse.newBuilder().addAllAds(finalAds).build();
         responseObserver.onNext(reply);
         responseObserver.onCompleted();
       } catch (StatusRuntimeException e) {
@@ -116,6 +132,41 @@ public final class AdService {
         responseObserver.onError(e);
       }
     }
+  }
+
+  private static final String[] URGENCY_TAGS = {"🔥 Limited Time!", "⚡ Flash Sale!", "⏳ Deal Ends Soon!"};
+
+  private String getUrgencyTag() {
+    return URGENCY_TAGS[random.nextInt(URGENCY_TAGS.length)];
+  }
+
+  private int calculateDynamicDiscount() {
+    // Higher discounts during off-peak hours (e.g., 2-4 AM UTC) to drive sales
+    int hour = ZonedDateTime.now(ZoneOffset.UTC).getHour();
+    if (hour >= 2 && hour <= 4) {
+        return 25 + random.nextInt(11); // 25-35%
+    }
+    return 10 + random.nextInt(6); // 10-15%
+  }
+
+  private Ad enrichWithFlashSale(Ad ad, String category) {
+    // 50% chance to inject a dynamic, intelligent promotion
+    if (random.nextFloat() < 0.5f) {
+      String code = DISCOUNT_CODES.getOrDefault(category, "GLOBAL10");
+      int discount = calculateDynamicDiscount();
+      String urgencyTag = getUrgencyTag();
+      String premiumMarker = "";
+      
+      // Add a premium marker for high-value categories
+      if (category.equals("accessories") || category.equals("footwear")) {
+          premiumMarker = "[PREMIUM] ";
+      }
+
+      String newText = String.format("%s%s %s [SAVE %d%% with code: %s]",
+          premiumMarker, urgencyTag, ad.getText(), discount, code);
+      return ad.toBuilder().setText(newText).build();
+    }
+    return ad;
   }
 
   private static final ImmutableListMultimap<String, Ad> adsMap = createAdsMap();

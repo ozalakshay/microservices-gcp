@@ -22,6 +22,7 @@ locals {
   ]
   memorystore_apis = ["redis.googleapis.com"]
   cluster_name     = google_container_cluster.my_cluster.name
+  location_flag    = can(regex("-[a-z]$", var.region)) ? "--zone" : "--region"
 }
 
 # Enable Google Cloud APIs
@@ -69,7 +70,7 @@ module "gcloud" {
   create_cmd_entrypoint = "gcloud"
   # Module does not support explicit dependency
   # Enforce implicit dependency through use of local variable
-  create_cmd_body = "container clusters get-credentials ${local.cluster_name} --zone=${var.region} --project=${var.gcp_project_id}"
+  create_cmd_body = "container clusters get-credentials ${local.cluster_name} ${local.location_flag}=${var.region} --project=${var.gcp_project_id}
 }
 
 # Apply YAML kubernetes-manifest configurations
@@ -95,6 +96,7 @@ resource "null_resource" "wait_conditions" {
   }
 
   depends_on = [
-    resource.null_resource.apply_deployment
+    resource.null_resource.apply_deployment,
+    resource.null_resource.configure_memorystore_workload
   ]
 }

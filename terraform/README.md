@@ -36,7 +36,9 @@ This page walks you through the steps required to deploy the [Online Boutique](h
 
 1. Open the `terraform.tfvars` file and replace `<project_id_here>` with the [GCP Project ID](https://cloud.google.com/resource-manager/docs/creating-managing-projects?hl=en#identifying_projects) for the `gcp_project_id` variable.
 
-1. (Optional) If you want to provision a [Google Cloud Memorystore (Redis)](https://cloud.google.com/memorystore) instance, you can change the value of `memorystore = false` to `memorystore = true` in this `terraform.tfvars` file.
+1. (Optional) If you want to provision a [Google Cloud Memorystore (Redis)](https://cloud.google.com/memorystore) instance, set `memorystore = true` in `terraform.tfvars`, and deploy with a manifest path that includes the Memorystore Kustomize component (for example `filepath_manifest = "../kustomize/tests/memorystore-with-all-components"`).
+
+1. (Optional) Set `cartservice_rollout_timeout` (default `"240s"`) to control how long Terraform waits for `cartservice` to roll out after the Redis endpoint is configured.
 
 1. Initialize Terraform.
 
@@ -95,3 +97,7 @@ To remove the individual resources created for by Terraform without deleting the
    ```
 
    1. If there is a confirmation prompt, type `yes` and hit Enter/Return.
+    ### Notes on Terraform behavior
+
+- The module now avoids in-place edits to repository files. When `memorystore = true`, Terraform configures `cartservice` through `kubectl set env` and waits for rollout completion instead of mutating `kustomize/components/memorystore/kustomization.yaml`.
+- Cluster credential acquisition automatically uses `--region` for regional clusters and `--zone` for zonal clusters based on the `region` input format.

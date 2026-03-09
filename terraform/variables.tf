@@ -45,3 +45,9 @@ variable "memorystore" {
   type        = bool
   description = "If true, Online Boutique's in-cluster Redis cache will be replaced with a Google Cloud Memorystore Redis cache"
 }
+
+variable "cartservice_rollout_timeout" {
+  type        = string
+  description = "Timeout used while waiting for cartservice rollout after Memorystore configuration"
+  default     = "240s"
+}
